@@ -1,0 +1,30 @@
+name: Android Export
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  export_android:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+
+    - name: Set up Godot
+      uses: broadway/checkout-godot-action@v2
+      with:
+        version: '3.4.0'  # Specify the version of Godot you are using
+
+    - name: Export to Android
+      run: |
+        mkdir -p export/android  # Create a directory for the export
+        godot --export "Android" "export/android/my_game.apk"  # Adjust export path accordingly
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: android-export
+        path: export/android  # Specify the export directory
