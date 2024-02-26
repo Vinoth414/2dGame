@@ -1,68 +1,41 @@
-variables:
-  DOCKER_DRIVER: overlay2
+# Whenever a tag push matching pattern "v*" then run the job
+on: 
+  push:
+    tags:
+      - "v*"
 
-image: myood/godot-ci-android-export:godot-3.3.3
+jobs:
+  # job id, can be anything
+  export_game:
+    # Always use ubuntu-latest for this action
+    runs-on: ubuntu-latest
+    # Add permission for release creation. Can be made narrower according to your needs
+    permissions: write-all
+    # Job name, can be anything
+    name: Export Game
+    steps:
+      # Always include the checkout step so that 
+      # your project is available for Godot to export
+    - name: checkout
+      uses: actions/checkout@v3.3.0
+  
+    - name: export game
+      id: export
+      # Use latest version (see releases for all versions)
+      uses: firebelley/godot-export@v5.2.0
+      with:
+        # Defining all the required inputs
+        godot_executable_download_url: https://downloads.tuxfamily.org/godotengine/4.0/Godot_v4.0-stable_linux.x86_64.zip
+        godot_export_templates_download_url: https://downloads.tuxfamily.org/godotengine/4.0/Godot_v4.0-stable_export_templates.tpz
+        relative_project_path: ./
+        archive_output: true
 
-variables:
-  APP_NAME: "Example"
-
-stages:
-  - export
-
-# Debug export is already setup in Docker image
-# Things left to do:
-#### For both debug and release exports (from Godot Editor GUI - no way to make them from CLI as of 07.2020) :
-  # 1. Project -> Install Android Build Template
-  # 2. create export named "Android" with desired HW targets (armeabi, arm, ...), enable custom build (check "Use Custom Build" in export settings)
-  # 3. then commit export_presets.cfg to the project repository.
-  # Finally, choose how to use build template on the CI.
-  # If you want to use build template installed when creating export_presets.cfg, then commit whole android directory.
-  # If you do no want to pollute project with commit of the build template, then uncomment "OPTIONAL" part lines below.
-before_script:
-  # OPTIONAL : Use android build template from docker image myood/godot-ci-android-export
-  #          : Enable this, if android build template is not part of project repository
-  #          : Any necessary plugins should also be installed automatically as part of 'before_script'
-  # Install android template
-  # - mkdir -pv android/build
-  # - mkdir -pv android/plugins
-  # - echo "${GODOT_VERSION}.${GODOT_RELEASE}" > android/.build_version
-  # - unzip ~/.local/share/godot/templates/${GODOT_VERSION}.${GODOT_RELEASE}/android_source.zip -d android/build
-  # - touch android/build/.gdignore
-  # Setup build
-  - chmod +x android/build/gradlew
-
-android_debug:
-  stage: export
-  when: manual
-  script:
-    - godot --verbose --debug --export-debug "Android Debug" $APP_NAME-debug.apk
-  artifacts: 
-    name: android
-    when: always
-    paths:
-      - $APP_NAME-debug.apk
-
-#### For release export
-  # 1. Take your generated release keystore and convert it to Base64: `base64 release.keystore -w 0`
-  # 2. Go to GitLab Project > Settings > CI/CD > Variables and copy the Base64-encoded keystore value in a new variable `K8S_SECRET_RELEASE_KEYSTORE_BASE64` as type variable.
-  # 3. Create a second variable K8S_SECRET_RELEASE_KEYSTORE_USER as type variable with the alias of your keystore as value.
-  # 4. Create a third variable K8S_SECRET_RELEASE_KEYSTORE_PASSWORD as type variable with the password of your keystore as value.
-android_release:
-  stage: export
-  when: manual
-  script:
-    # Config sanity check for Android Release Jobs. You will need to include keystore and password in the GitLab variable settings: 
-    - bash -c -- "[[ $K8S_SECRET_RELEASE_KEYSTORE_BASE64 != '' ]]"
-    - bash -c -- "[[ $K8S_SECRET_RELEASE_KEYSTORE_USER != '' ]]"
-    - bash -c -- "[[ $K8S_SECRET_RELEASE_KEYSTORE_PASSWORD != '' ]]"
-    # Setup release keystore file, user and password
-    - echo $K8S_SECRET_RELEASE_KEYSTORE_BASE64 | base64 --decode > /root/release.keystore
-    - sed 's@keystore/release[[:space:]]*=[[:space:]]*".*"@keystore/release = "/root/release.keystore"@g' -i export_presets.cfg
-    - sed 's@keystore/release_password[[:space:]]*=[[:space:]]*".*"@keystore/release_password="'$K8S_SECRET_RELEASE_KEYSTORE_PASSWORD'"@g' -i export_presets.cfg
-    - sed 's@keystore/release_user[[:space:]]*=[[:space:]]*".*"@keystore/release_user="'$K8S_SECRET_RELEASE_KEYSTORE_USER'"@g' -i export_presets.cfg
-    - godot --verbose --debug --export "Android Release" ${APP_NAME}.aab
-  artifacts: 
-    name: ${APP_NAME}-android
-    when: always
-    paths:
-      - ${APP_NAME}.aab
+      # This release action has worked well for me. However, you can most likely use any release action of your choosing.
+      # https://github.com/ncipollo/release-action
+    - name: create release
+      uses: ncipollo/release-action@v1.12.0
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        generateReleaseNotes: true
+        tag: ${{ github.ref_name }}
+        artifacts: ${{ steps.export.outputs.archive_directory }}/*
